@@ -1,0 +1,36 @@
+drop database JobPortalSystem;
+CREATE DATABASE IF NOT EXISTS JobPortalSystem;
+USE JobPortalSystem;
+
+-- Users table
+CREATE TABLE IF NOT EXISTS Users (
+    user_id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password VARCHAR(50) NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    user_type ENUM('Job Seeker','Employer') NOT NULL
+);
+
+-- Jobs table
+CREATE TABLE IF NOT EXISTS Jobs (
+    job_id INT AUTO_INCREMENT PRIMARY KEY,
+    employer_id INT NOT NULL,
+    company_name VARCHAR(100) NOT NULL,
+    job_title VARCHAR(100) NOT NULL,
+    job_description TEXT,
+    job_location VARCHAR(100) NOT NULL,
+    salary VARCHAR(20),
+    posted_date DATE NOT NULL,
+    FOREIGN KEY (employer_id) REFERENCES Users(user_id)
+);
+
+-- Applications table
+CREATE TABLE IF NOT EXISTS Applications (
+    application_id INT AUTO_INCREMENT PRIMARY KEY,
+    job_id INT NOT NULL,
+    job_seeker_id INT NOT NULL,
+    application_date DATE NOT NULL,
+    status ENUM('Applied','Accepted','Rejected') NOT NULL DEFAULT 'Applied',
+    FOREIGN KEY (job_id) REFERENCES Jobs(job_id),
+    FOREIGN KEY (job_seeker_id) REFERENCES Users(user_id)
+);
