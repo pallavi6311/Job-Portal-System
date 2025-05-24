@@ -1,0 +1,544 @@
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.sql.*;
+import java.util.*;
+
+public class JobPortalSystem extends JFrame {
+    private Connection connection;
+    private int currentUserId = -1;
+    private String currentUserType = "";
+
+    // GUI Components
+    private JTextField usernameField, emailField, jobTitleField, jobLocationField, salaryField;
+    private JPasswordField passwordField;
+    private JTextArea jobDescriptionArea;
+    private JComboBox<String> userTypeComboBox;
+    private JButton registerButton, loginButton, postJobButton, viewJobsButton, applyButton, myJobsButton, logoutButton;
+
+    // Portal UI
+    private CardLayout cardLayout;
+    private JPanel cardPanel;
+
+    public JobPortalSystem() {
+        initializeDatabaseConnection();
+        initializeUI();
+        insertPredefinedJobs();
+    }
+
+    private void initializeDatabaseConnection() {
+        try {
+            String url = "jdbc:mysql://localhost:3307/JobPortalSystem?useSSL=false";
+            String user = "root";
+            String password = "";
+            connection = DriverManager.getConnection(url, user, password);
+            initializeDatabaseSchema();
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this,
+                "Database Connection Error: " + e.getMessage(),
+                "Connection Error",
+                JOptionPane.ERROR_MESSAGE);
+            System.exit(1);
+        }
+    }
+
+    private void initializeDatabaseSchema() throws SQLException {
+        Statement stmt = connection.createStatement();
+
+        stmt.executeUpdate("CREATE TABLE IF NOT EXISTS Users (" +
+            "user_id INT AUTO_INCREMENT PRIMARY KEY, " +
+            "username VARCHAR(50) UNIQUE NOT NULL, " +
+            "password VARCHAR(50) NOT NULL, " +
+            "email VARCHAR(100) UNIQUE NOT NULL, " +
+            "user_type ENUM('Job Seeker','Employer') NOT NULL)");
+
+        stmt.executeUpdate("CREATE TABLE IF NOT EXISTS Jobs (" +
+            "job_id INT AUTO_INCREMENT PRIMARY KEY, " +
+            "employer_id INT NOT NULL, " +
+            "company_name VARCHAR(100) NOT NULL, " +
+            "job_title VARCHAR(100) NOT NULL, " +
+            "job_description TEXT, " +
+            "job_location VARCHAR(100) NOT NULL, " +
+            "salary VARCHAR(20), " +
+            "posted_date DATE NOT NULL, " +
+            "FOREIGN KEY (employer_id) REFERENCES Users(user_id))");
+
+        stmt.executeUpdate("CREATE TABLE IF NOT EXISTS Applications (" +
+            "application_id INT AUTO_INCREMENT PRIMARY KEY, " +
+            "job_id INT NOT NULL, " +
+            "job_seeker_id INT NOT NULL, " +
+            "application_date DATE NOT NULL, " +
+            "status ENUM('Applied','Accepted','Rejected') NOT NULL DEFAULT 'Applied', " +
+            "FOREIGN KEY (job_id) REFERENCES Jobs(job_id), " +
+            "FOREIGN KEY (job_seeker_id) REFERENCES Users(user_id))");
+    }
+
+    private void initializeUI() {
+        setTitle("Job Portal System");
+        setSize(900, 600);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLocationRelativeTo(null);
+
+        // Sidebar navigation
+        JPanel sidebar = new JPanel();
+        sidebar.setLayout(new BoxLayout(sidebar, BoxLayout.Y_AXIS));
+        sidebar.setBorder(BorderFactory.createTitledBorder("Navigation"));
+        sidebar.setPreferredSize(new Dimension(180, 0));
+        JButton navAuth = new JButton("Login/Register");
+        JButton navDashboard = new JButton("Dashboard");
+        JButton navJobs = new JButton("Jobs");
+        navAuth.setAlignmentX(Component.CENTER_ALIGNMENT);
+        navDashboard.setAlignmentX(Component.CENTER_ALIGNMENT);
+        navJobs.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        // Card panel for portal sections
+        cardLayout = new CardLayout();
+        cardPanel = new JPanel(cardLayout);
+
+        // Add cards
+        cardPanel.add(createAuthenticationPanel(), "AUTH");
+        cardPanel.add(createDashboardPanel(), "DASHBOARD");
+        cardPanel.add(createJobPanel(), "JOBS");
+
+        // Sidebar navigation actions
+        navAuth.addActionListener(e -> cardLayout.show(cardPanel, "AUTH"));
+        navDashboard.addActionListener(e -> cardLayout.show(cardPanel, "DASHBOARD"));
+        navJobs.addActionListener(e -> cardLayout.show(cardPanel, "JOBS"));
+
+        sidebar.add(Box.createVerticalStrut(30));
+        sidebar.add(navAuth);
+        sidebar.add(Box.createVerticalStrut(20));
+        sidebar.add(navDashboard);
+        sidebar.add(Box.createVerticalStrut(20));
+        sidebar.add(navJobs);
+        sidebar.add(Box.createVerticalGlue());
+
+        // Main layout
+        getContentPane().setLayout(new BorderLayout());
+        getContentPane().add(sidebar, BorderLayout.WEST);
+        getContentPane().add(cardPanel, BorderLayout.CENTER);
+
+        cardLayout.show(cardPanel, "AUTH");
+    }
+
+    private JPanel createAuthenticationPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(BorderFactory.createTitledBorder("User Authentication"));
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(8, 8, 8, 8);
+        gbc.anchor = GridBagConstraints.WEST;
+
+        gbc.gridx = 0; gbc.gridy = 0;
+        panel.add(new JLabel("Username:"), gbc);
+        gbc.gridx = 1;
+        usernameField = new JTextField(16);
+        panel.add(usernameField, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 1;
+        panel.add(new JLabel("Password:"), gbc);
+        gbc.gridx = 1;
+        passwordField = new JPasswordField(16);
+        panel.add(passwordField, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 2;
+        panel.add(new JLabel("Email:"), gbc);
+        gbc.gridx = 1;
+        emailField = new JTextField(16);
+        panel.add(emailField, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 3;
+        panel.add(new JLabel("User Type:"), gbc);
+        gbc.gridx = 1;
+        userTypeComboBox = new JComboBox<>(new String[]{"Job Seeker", "Employer"});
+        panel.add(userTypeComboBox, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 4;
+        registerButton = new JButton("Register");
+        registerButton.addActionListener(e -> registerUser());
+        panel.add(registerButton, gbc);
+
+        gbc.gridx = 1;
+        loginButton = new JButton("Login");
+        loginButton.addActionListener(e -> loginUser());
+        panel.add(loginButton, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 5;
+        logoutButton = new JButton("Logout");
+        logoutButton.setEnabled(false);
+        logoutButton.addActionListener(e -> logout());
+        gbc.gridwidth = 2;
+        panel.add(logoutButton, gbc);
+
+        return panel;
+    }
+
+    private JPanel createDashboardPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(BorderFactory.createTitledBorder("Portal Dashboard"));
+
+        JLabel welcomeLabel = new JLabel("Welcome to the Job Portal System!", SwingConstants.CENTER);
+        welcomeLabel.setFont(new Font("Arial", Font.BOLD, 22));
+        panel.add(welcomeLabel, BorderLayout.CENTER);
+
+        return panel;
+    }
+
+    private JPanel createJobPanel() {
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.setBorder(BorderFactory.createTitledBorder("Job Management"));
+
+        JPanel inputPanel = new JPanel(new GridLayout(4, 2, 8, 8));
+        inputPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        inputPanel.add(new JLabel("Job Title:"));
+        jobTitleField = new JTextField();
+        inputPanel.add(jobTitleField);
+
+        inputPanel.add(new JLabel("Job Location:"));
+        jobLocationField = new JTextField();
+        inputPanel.add(jobLocationField);
+
+        inputPanel.add(new JLabel("Salary (LPA):"));
+        salaryField = new JTextField();
+        inputPanel.add(salaryField);
+
+        inputPanel.add(new JLabel("Job Description:"));
+        jobDescriptionArea = new JTextArea(3, 20);
+        JScrollPane descScroll = new JScrollPane(jobDescriptionArea);
+        inputPanel.add(descScroll);
+
+        panel.add(inputPanel, BorderLayout.NORTH);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 12, 12));
+        postJobButton = new JButton("Post Job");
+        postJobButton.setEnabled(false);
+        postJobButton.addActionListener(e -> postJob());
+        buttonPanel.add(postJobButton);
+
+        viewJobsButton = new JButton("View Jobs");
+        viewJobsButton.addActionListener(e -> showAvailableJobs());
+        buttonPanel.add(viewJobsButton);
+
+        applyButton = new JButton("Apply for Job");
+        applyButton.setEnabled(false);
+        applyButton.addActionListener(e -> applyForJob());
+        buttonPanel.add(applyButton);
+
+        myJobsButton = new JButton("View My Jobs");
+        myJobsButton.setEnabled(false);
+        myJobsButton.addActionListener(e -> showEmployerJobs());
+        buttonPanel.add(myJobsButton);
+
+        panel.add(buttonPanel, BorderLayout.SOUTH);
+
+        return panel;
+    }
+
+    private void insertPredefinedJobs() {
+        try {
+            Statement checkStmt = connection.createStatement();
+            ResultSet rs = checkStmt.executeQuery("SELECT COUNT(*) FROM Jobs");
+            rs.next();
+            if (rs.getInt(1) == 0) {
+                Statement insertStmt = connection.createStatement();
+                insertStmt.executeUpdate("INSERT INTO Jobs (employer_id, company_name, job_title, job_description, " +
+                        "job_location, salary, posted_date) VALUES " +
+                        "(1, 'Tech Solutions India', 'Full Stack Developer', 'MERN Stack Developer', " +
+                        "'Bengaluru', '12 LPA', CURDATE())");
+            }
+        } catch (SQLException e) {
+            System.out.println("Error inserting predefined jobs: " + e.getMessage());
+        }
+    }
+
+    private void registerUser() {
+        String username = usernameField.getText().trim();
+        String password = new String(passwordField.getPassword()).trim();
+        String email = emailField.getText().trim();
+        String userType = (String) userTypeComboBox.getSelectedItem();
+
+        if (username.isEmpty() || password.isEmpty() || email.isEmpty()) {
+            showErrorMessage("All fields are required");
+            return;
+        }
+
+        if (!email.matches("^[\\w-.]+@([\\w-]+\\.)+[\\w-]{2,4}$")) {
+            showErrorMessage("Please enter a valid email address");
+            return;
+        }
+
+        try {
+            String checkQuery = "SELECT user_id FROM Users WHERE username = ? OR email = ?";
+            PreparedStatement checkStmt = connection.prepareStatement(checkQuery);
+            checkStmt.setString(1, username);
+            checkStmt.setString(2, email);
+            ResultSet rs = checkStmt.executeQuery();
+
+            if (rs.next()) {
+                showErrorMessage("Username or email already registered");
+                return;
+            }
+
+            String insertQuery = "INSERT INTO Users (username, password, email, user_type) VALUES (?, ?, ?, ?)";
+            PreparedStatement insertStmt = connection.prepareStatement(insertQuery, Statement.RETURN_GENERATED_KEYS);
+            insertStmt.setString(1, username);
+            insertStmt.setString(2, password);
+            insertStmt.setString(3, email);
+            insertStmt.setString(4, userType);
+
+            int affectedRows = insertStmt.executeUpdate();
+
+            if (affectedRows > 0) {
+                ResultSet generatedKeys = insertStmt.getGeneratedKeys();
+                if (generatedKeys.next()) {
+                    currentUserId = generatedKeys.getInt(1);
+                    currentUserType = userType;
+                }
+                JOptionPane.showMessageDialog(this,
+                        "Registration successful!",
+                        "Success",
+                        JOptionPane.INFORMATION_MESSAGE);
+                updateUIAfterLogin();
+            }
+        } catch (SQLException e) {
+            showErrorMessage("Database error: " + e.getMessage());
+        }
+    }
+
+    private void loginUser() {
+        String username = usernameField.getText().trim();
+        String password = new String(passwordField.getPassword()).trim();
+
+        if (username.isEmpty() || password.isEmpty()) {
+            showErrorMessage("Username and password are required");
+            return;
+        }
+        try {
+            String query = "SELECT user_id, user_type FROM Users WHERE username = ? AND password = ?";
+            PreparedStatement stmt = connection.prepareStatement(query);
+            stmt.setString(1, username);
+            stmt.setString(2, password);
+            ResultSet rs = stmt.executeQuery();
+
+            if (rs.next()) {
+                currentUserId = rs.getInt("user_id");
+                currentUserType = rs.getString("user_type");
+                JOptionPane.showMessageDialog(this,
+                        "Login successful as " + currentUserType,
+                        "Success",
+                        JOptionPane.INFORMATION_MESSAGE);
+                updateUIAfterLogin();
+            } else {
+                showErrorMessage("Invalid username or password");
+            }
+        } catch (SQLException e) {
+            showErrorMessage("Database error: " + e.getMessage());
+        }
+    }
+
+    private void logout() {
+        currentUserId = -1;
+        currentUserType = "";
+        usernameField.setText("");
+        passwordField.setText("");
+        updateUIAfterLogin();
+        JOptionPane.showMessageDialog(this, "Logged out successfully", "Logout", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private void updateUIAfterLogin() {
+        boolean isLoggedIn = currentUserId != -1;
+        boolean isEmployer = currentUserType.equals("Employer");
+
+        postJobButton.setEnabled(isLoggedIn && isEmployer);
+        applyButton.setEnabled(isLoggedIn && !isEmployer);
+        myJobsButton.setEnabled(isLoggedIn && isEmployer);
+        logoutButton.setEnabled(isLoggedIn);
+
+        registerButton.setEnabled(!isLoggedIn);
+        loginButton.setEnabled(!isLoggedIn);
+    }
+
+    private void postJob() {
+        String jobTitle = jobTitleField.getText().trim();
+        String jobDescription = jobDescriptionArea.getText().trim();
+        String jobLocation = jobLocationField.getText().trim();
+        String salary = salaryField.getText().trim();
+
+        if (jobTitle.isEmpty() || jobLocation.isEmpty()) {
+            showErrorMessage("Job title and location are required");
+            return;
+        }
+
+        if (!salary.isEmpty() && !salary.matches("^\\d+(\\.\\d+)?\\s*(LPA|lpa|Lac|Cr)?$")) {
+            showErrorMessage("Please enter salary in format like '12 LPA' or '500000'");
+            return;
+        }
+
+        try {
+            String companyName = JOptionPane.showInputDialog(this, "Enter Company Name:");
+            if (companyName == null || companyName.trim().isEmpty()) {
+                showErrorMessage("Company name is required");
+                return;
+            }
+
+            String query = "INSERT INTO Jobs (employer_id, company_name, job_title, job_description, " +
+                    "job_location, salary, posted_date) VALUES (?, ?, ?, ?, ?, ?, CURDATE())";
+            PreparedStatement stmt = connection.prepareStatement(query);
+            stmt.setInt(1, currentUserId);
+            stmt.setString(2, companyName);
+            stmt.setString(3, jobTitle);
+            stmt.setString(4, jobDescription);
+            stmt.setString(5, jobLocation);
+            stmt.setString(6, salary.isEmpty() ? null : salary + " LPA");
+
+            stmt.executeUpdate();
+            JOptionPane.showMessageDialog(this,
+                    "Job posted successfully!",
+                    "Success",
+                    JOptionPane.INFORMATION_MESSAGE);
+            clearJobFields();
+        } catch (SQLException e) {
+            showErrorMessage("Failed to post job: " + e.getMessage());
+        }
+    }
+
+    private void showAvailableJobs() {
+        try {
+            String query = "SELECT j.job_id, j.company_name, j.job_title, j.job_description, " +
+                    "j.job_location, j.salary, u.username, j.posted_date, " +
+                    "CASE WHEN a.application_id IS NOT NULL THEN 'Applied' " +
+                    "ELSE 'Not Applied' END AS application_status " +
+                    "FROM Jobs j JOIN Users u ON j.employer_id = u.user_id " +
+                    "LEFT JOIN Applications a ON j.job_id = a.job_id AND a.job_seeker_id = ? " +
+                    "ORDER BY j.posted_date DESC";
+
+            PreparedStatement stmt = connection.prepareStatement(query);
+            stmt.setInt(1, currentUserId);
+            ResultSet rs = stmt.executeQuery();
+
+            StringBuilder jobs = new StringBuilder();
+            jobs.append("Available Jobs:\n\n");
+            boolean hasJobs = false;
+
+            while (rs.next()) {
+                hasJobs = true;
+                jobs.append(String.format("[ID: %d] %s - %s\n",
+                        rs.getInt("job_id"), rs.getString("company_name"), rs.getString("job_title")));
+                jobs.append("Status: ").append(rs.getString("application_status")).append("\n");
+                jobs.append("Description: ").append(rs.getString("job_description")).append("\n");
+                jobs.append("Location: ").append(rs.getString("job_location")).append("\n");
+                jobs.append("Salary: ").append(rs.getString("salary") != null ?
+                        rs.getString("salary") : "Not specified").append("\n");
+                jobs.append("Posted by: ").append(rs.getString("username")).append(" on ")
+                        .append(rs.getDate("posted_date")).append("\n\n");
+            }
+
+            JTextArea textArea = new JTextArea(hasJobs ? jobs.toString() : "No jobs available currently");
+            textArea.setEditable(false);
+            JScrollPane scrollPane = new JScrollPane(textArea);
+            scrollPane.setPreferredSize(new Dimension(700, 500));
+
+            JOptionPane.showMessageDialog(this, scrollPane, "Available Jobs", JOptionPane.PLAIN_MESSAGE);
+        } catch (SQLException e) {
+            showErrorMessage("Failed to load jobs: " + e.getMessage());
+        }
+    }
+
+    private void showEmployerJobs() {
+        if (currentUserId == -1 || !currentUserType.equals("Employer")) {
+            showErrorMessage("Only employers can view their jobs.");
+            return;
+        }
+        try {
+            String query = "SELECT job_id, company_name, job_title, job_description, job_location, salary, posted_date " +
+                    "FROM Jobs WHERE employer_id = ? ORDER BY posted_date DESC";
+            PreparedStatement stmt = connection.prepareStatement(query);
+            stmt.setInt(1, currentUserId);
+            ResultSet rs = stmt.executeQuery();
+
+            StringBuilder jobs = new StringBuilder();
+            jobs.append("Your Posted Jobs:\n\n");
+            boolean hasJobs = false;
+
+            while (rs.next()) {
+                hasJobs = true;
+                jobs.append(String.format("[ID: %d] %s - %s\n",
+                        rs.getInt("job_id"), rs.getString("company_name"), rs.getString("job_title")));
+                jobs.append("Description: ").append(rs.getString("job_description")).append("\n");
+                jobs.append("Location: ").append(rs.getString("job_location")).append("\n");
+                jobs.append("Salary: ").append(rs.getString("salary") != null ?
+                        rs.getString("salary") : "Not specified").append("\n");
+                jobs.append("Posted on: ").append(rs.getDate("posted_date")).append("\n\n");
+            }
+
+            JTextArea textArea = new JTextArea(hasJobs ? jobs.toString() : "You have not posted any jobs.");
+            textArea.setEditable(false);
+            JScrollPane scrollPane = new JScrollPane(textArea);
+            scrollPane.setPreferredSize(new Dimension(700, 500));
+
+            JOptionPane.showMessageDialog(this, scrollPane, "My Jobs", JOptionPane.PLAIN_MESSAGE);
+        } catch (SQLException e) {
+            showErrorMessage("Failed to load your jobs: " + e.getMessage());
+        }
+    }
+
+    private void applyForJob() {
+        String jobIdStr = JOptionPane.showInputDialog(this,
+                "Enter Job ID to apply for:", "Apply for Job", JOptionPane.PLAIN_MESSAGE);
+        if (jobIdStr == null || jobIdStr.trim().isEmpty()) {
+            return;
+        }
+        int jobId;
+        try {
+            jobId = Integer.parseInt(jobIdStr.trim());
+        } catch (NumberFormatException e) {
+            showErrorMessage("Invalid Job ID");
+            return;
+        }
+        try {
+            // Check if job exists
+            String jobCheck = "SELECT job_id FROM Jobs WHERE job_id = ?";
+            PreparedStatement jobStmt = connection.prepareStatement(jobCheck);
+            jobStmt.setInt(1, jobId);
+            ResultSet jobRs = jobStmt.executeQuery();
+            if (!jobRs.next()) {
+                showErrorMessage("Job ID does not exist");
+                return;
+            }
+            // Check if already applied
+            String appCheck = "SELECT application_id FROM Applications WHERE job_id = ? AND job_seeker_id = ?";
+            PreparedStatement appStmt = connection.prepareStatement(appCheck);
+            appStmt.setInt(1, jobId);
+            appStmt.setInt(2, currentUserId);
+            ResultSet appRs = appStmt.executeQuery();
+            if (appRs.next()) {
+                showErrorMessage("You have already applied for this job");
+                return;
+            }
+            // Apply
+            String applyQuery = "INSERT INTO Applications (job_id, job_seeker_id, application_date, status) VALUES (?, ?, CURDATE(), 'Applied')";
+            PreparedStatement applyStmt = connection.prepareStatement(applyQuery);
+            applyStmt.setInt(1, jobId);
+            applyStmt.setInt(2, currentUserId);
+            applyStmt.executeUpdate();
+            JOptionPane.showMessageDialog(this, "Applied successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+            showAvailableJobs(); // Refresh the jobs view to show updated status
+        } catch (SQLException e) {
+            showErrorMessage("Failed to apply: " + e.getMessage());
+        }
+    }
+
+    private void clearJobFields() {
+        jobTitleField.setText("");
+        jobDescriptionArea.setText("");
+        jobLocationField.setText("");
+        salaryField.setText("");
+    }
+
+    private void showErrorMessage(String message) {
+        JOptionPane.showMessageDialog(this, message, "Error", JOptionPane.ERROR_MESSAGE);
+    }
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> new JobPortalSystem().setVisible(true));
+    }
+}
